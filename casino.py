@@ -57,42 +57,66 @@ class Game():
 		self.dealer.spots[0].draw(self.deal_card())
 
 #TODO return
-#TODO: fucking insurance
 #TODO: Illegal intents allowed
 	def engage(self):
 		up_card = self.dealer.spots[0].hand[1]
 		hole_card = self.dealer.spots[0].hand[0]
-		for person in self.players + [self.dealer]:
-			for i, spot in enumerate(person.spots):
-				if spot.split_count:
-					spot.draw(self.deal_card())
-				playing = True
-				while playing:
-					action = person.intention(spot, up_card, hole_card)
-					spot.plays.append(action)
-					match action:
-						case "Hit":
-							spot.draw(self.deal_card())
-						case "Split":
-							additional_bet = person.supplemental_bet(spot, False)
-							person.cash -= additional_bet
-							new_spot = Spot(additional_bet, spot.split_count + 1)
-							new_spot.draw(spot.hand.pop())
-							person.spots.insert(i+1, new_spot)
-							spot.draw(self.deal_card())
-							spot.split = True
-						case "Double":
-							additional_bet = person.supplemental_bet(spot, False)
-							person.cash -= additional_bet
-							spot.chips += additional_bet
-							spot.draw(self.deal_card())
-							spot.doubled = True
-						case "Stand":
-							pass
-						case "Bust":
-							pass
-					if action in ("Double", "Stand", "Bust"):
-						playing = False
+		dealer_blackjack = False
+		if up_card.rank == "A":
+			dealer_blackjack = self.insurance()
+		if not dealer_blackjack:
+			for person in self.players + [self.dealer]:
+				for i, spot in enumerate(person.spots):
+					if spot.split_count:
+						spot.draw(self.deal_card())
+					playing = True
+					while playing:
+						action = person.intention(spot, up_card, hole_card)
+						spot.plays.append(action)
+						match action:
+							case "Hit":
+								spot.draw(self.deal_card())
+							case "Split":
+								additional_bet = person.supplemental_bet(spot, False)
+								person.cash -= additional_bet
+								new_spot = Spot(additional_bet, spot.split_count + 1)
+								new_spot.draw(spot.hand.pop())
+								person.spots.insert(i+1, new_spot)
+								spot.draw(self.deal_card())
+								spot.split = True
+							case "Double":
+								additional_bet = person.supplemental_bet(spot, True)
+								person.cash -= additional_bet
+								spot.chips += additional_bet
+								spot.draw(self.deal_card())
+								spot.doubled = True
+							case "Stand":
+								pass
+							case "Bust":
+								pass
+						if action in ("Double", "Stand", "Bust"):
+							playing = False
+
+	def insurance(self):
+		for person in self.players:
+			for spot in person.spots:
+				if insurance := person.insure(spot):
+					person.cash -= insurance
+					spot.insurance_pool += insurance
+		if self.dealer.spots[0].is_blackjack():
+			for person in self.players:
+				for spot in person.spots:
+					self.dealer.cash -= 2 * spot.insurance_pool
+					spot.insurance_pool += 2 * spot.insurance_pool
+					person.cash += spot.insurance_pool
+					spot.insurance_pool = 0
+			return True
+		else:
+			for person in self.players:
+				for spot in person.spots:
+					self.dealer.cash += spot.insurance_pool
+					spot.insurance_pool = 0
+			return False
 
 #TODO return
 #TODO: dealer bankrupt
@@ -214,6 +238,9 @@ class Player():
 		else:
 			return "--%"
 		
+	def insure(self, spot):
+		return 0
+		
 class Dealer(Player):
 	count = 0
 	def __init__(self, cash=100_000.0):
@@ -238,8 +265,7 @@ class Guest(Player):
 		self.is_dealer = False
 		Guest.count += 1
 		self.number = Guest.count
-
-#TODO: split, double, insurance		
+	
 #TODO: The Book
 #TODO: check bet
 	def intention(self, this_spot: "Spot", up_card: "Card", hole_card: "Card"):
@@ -285,6 +311,7 @@ class Spot():
 		self.split = False
 		self.split_count = split_count
 		self.doubled = False
+		self.insurance_pool = 0
 		self.hand: list[Card] = []
 		if cards:
 			self.hand = cards
